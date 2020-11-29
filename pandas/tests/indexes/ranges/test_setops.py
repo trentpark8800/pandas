@@ -8,7 +8,6 @@ import pandas._testing as tm
 
 
 class TestRangeIndexSetOps:
-    @pytest.mark.parametrize("sort", [None, False])
     def test_intersection(self, sort):
         # intersect with Int64Index
         index = RangeIndex(start=0, stop=20, step=2)
@@ -79,7 +78,6 @@ class TestRangeIndexSetOps:
         expected = RangeIndex(0, 0, 1)
         tm.assert_index_equal(result, expected)
 
-    @pytest.mark.parametrize("sort", [False, None])
     def test_union_noncomparable(self, sort):
         # corner case, non-Int64Index
         index = RangeIndex(start=0, stop=20, step=2)
@@ -225,7 +223,6 @@ class TestRangeIndexSetOps:
     )
     def unions(self, request):
         """Inputs and expected outputs for RangeIndex.union tests"""
-
         return request.param
 
     def test_union_sorted(self, unions):
@@ -242,3 +239,68 @@ class TestRangeIndexSetOps:
         res3 = idx1._int64index.union(idx2, sort=None)
         tm.assert_index_equal(res2, expected_sorted, exact=True)
         tm.assert_index_equal(res3, expected_sorted)
+
+    def test_difference(self):
+        # GH#12034 Cases where we operate against another RangeIndex and may
+        #  get back another RangeIndex
+        obj = RangeIndex.from_range(range(1, 10), name="foo")
+
+        result = obj.difference(obj)
+        expected = RangeIndex.from_range(range(0), name="foo")
+        tm.assert_index_equal(result, expected, exact=True)
+
+        result = obj.difference(expected.rename("bar"))
+        tm.assert_index_equal(result, obj.rename(None), exact=True)
+
+        result = obj.difference(obj[:3])
+        tm.assert_index_equal(result, obj[3:], exact=True)
+
+        result = obj.difference(obj[-3:])
+        tm.assert_index_equal(result, obj[:-3], exact=True)
+
+        result = obj[::-1].difference(obj[-3:])
+        tm.assert_index_equal(result, obj[:-3][::-1], exact=True)
+
+        result = obj[::-1].difference(obj[-3:][::-1])
+        tm.assert_index_equal(result, obj[:-3][::-1], exact=True)
+
+        result = obj.difference(obj[2:6])
+        expected = Int64Index([1, 2, 7, 8, 9], name="foo")
+        tm.assert_index_equal(result, expected)
+
+    def test_difference_mismatched_step(self):
+        obj = RangeIndex.from_range(range(1, 10), name="foo")
+
+        result = obj.difference(obj[::2])
+        expected = obj[1::2]._int64index
+        tm.assert_index_equal(result, expected, exact=True)
+
+        result = obj.difference(obj[1::2])
+        expected = obj[::2]._int64index
+        tm.assert_index_equal(result, expected, exact=True)
+
+    def test_symmetric_difference(self):
+        # GH#12034 Cases where we operate against another RangeIndex and may
+        #  get back another RangeIndex
+        left = RangeIndex.from_range(range(1, 10), name="foo")
+
+        result = left.symmetric_difference(left)
+        expected = RangeIndex.from_range(range(0), name="foo")
+        tm.assert_index_equal(result, expected)
+
+        result = left.symmetric_difference(expected.rename("bar"))
+        tm.assert_index_equal(result, left.rename(None))
+
+        result = left[:-2].symmetric_difference(left[2:])
+        expected = Int64Index([1, 2, 8, 9], name="foo")
+        tm.assert_index_equal(result, expected)
+
+        right = RangeIndex.from_range(range(10, 15))
+
+        result = left.symmetric_difference(right)
+        expected = RangeIndex.from_range(range(1, 15))
+        tm.assert_index_equal(result, expected)
+
+        result = left.symmetric_difference(right[1:])
+        expected = Int64Index([1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14])
+        tm.assert_index_equal(result, expected)

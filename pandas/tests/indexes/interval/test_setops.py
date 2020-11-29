@@ -5,16 +5,6 @@ from pandas import Index, IntervalIndex, Timestamp, interval_range
 import pandas._testing as tm
 
 
-@pytest.fixture(scope="class", params=[None, "foo"])
-def name(request):
-    return request.param
-
-
-@pytest.fixture(params=[None, False])
-def sort(request):
-    return request.param
-
-
 def monotonic_index(start, end, dtype="int64", closed="right"):
     return IntervalIndex.from_breaks(np.arange(start, end, dtype=dtype), closed=closed)
 
@@ -153,7 +143,6 @@ class TestIntervalIndex:
     @pytest.mark.parametrize(
         "op_name", ["union", "intersection", "difference", "symmetric_difference"]
     )
-    @pytest.mark.parametrize("sort", [None, False])
     def test_set_incompatible_types(self, closed, op_name, sort):
         index = monotonic_index(0, 11, closed=closed)
         set_op = getattr(index, op_name)
@@ -170,18 +159,18 @@ class TestIntervalIndex:
         # mixed closed
         msg = (
             "can only do set operations between two IntervalIndex objects "
-            "that are closed on the same side"
+            "that are closed on the same side and have compatible dtypes"
         )
         for other_closed in {"right", "left", "both", "neither"} - {closed}:
             other = monotonic_index(0, 11, closed=other_closed)
-            with pytest.raises(ValueError, match=msg):
+            with pytest.raises(TypeError, match=msg):
                 set_op(other, sort=sort)
 
         # GH 19016: incompatible dtypes
         other = interval_range(Timestamp("20180101"), periods=9, closed=closed)
         msg = (
-            "can only do {op} between two IntervalIndex objects that have "
-            "compatible dtypes"
-        ).format(op=op_name)
+            "can only do set operations between two IntervalIndex objects "
+            "that are closed on the same side and have compatible dtypes"
+        )
         with pytest.raises(TypeError, match=msg):
             set_op(other, sort=sort)

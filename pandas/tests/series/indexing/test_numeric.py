@@ -5,44 +5,6 @@ from pandas import DataFrame, Index, Series
 import pandas._testing as tm
 
 
-def test_delitem():
-    # GH 5542
-    # should delete the item inplace
-    s = Series(range(5))
-    del s[0]
-
-    expected = Series(range(1, 5), index=range(1, 5))
-    tm.assert_series_equal(s, expected)
-
-    del s[1]
-    expected = Series(range(2, 5), index=range(2, 5))
-    tm.assert_series_equal(s, expected)
-
-    # empty
-    s = Series(dtype=object)
-
-    with pytest.raises(KeyError, match=r"^0$"):
-        del s[0]
-
-    # only 1 left, del, add, del
-    s = Series(1)
-    del s[0]
-    tm.assert_series_equal(s, Series(dtype="int64", index=Index([], dtype="int64")))
-    s[0] = 1
-    tm.assert_series_equal(s, Series(1))
-    del s[0]
-    tm.assert_series_equal(s, Series(dtype="int64", index=Index([], dtype="int64")))
-
-    # Index(dtype=object)
-    s = Series(1, index=["a"])
-    del s["a"]
-    tm.assert_series_equal(s, Series(dtype="int64", index=Index([], dtype="object")))
-    s["a"] = 1
-    tm.assert_series_equal(s, Series(1, index=["a"]))
-    del s["a"]
-    tm.assert_series_equal(s, Series(dtype="int64", index=Index([], dtype="object")))
-
-
 def test_slice_float64():
     values = np.arange(10.0, 50.0, 2)
     index = Index(values)
@@ -78,12 +40,6 @@ def test_getitem_negative_out_of_bounds():
         s[-11] = "foo"
 
 
-def test_getitem_regression():
-    s = Series(range(5), index=list(range(5)))
-    result = s[list(range(5))]
-    tm.assert_series_equal(result, s)
-
-
 def test_getitem_setitem_slice_bug():
     s = Series(range(10), index=list(range(10)))
     result = s[-12:]
@@ -115,22 +71,10 @@ def test_getitem_setitem_slice_integers():
     assert not (s[4:] == 0).any()
 
 
-def test_setitem_float_labels():
-    # note labels are floats
-    s = Series(["a", "b", "c"], index=[0, 0.5, 1])
-    tmp = s.copy()
-
-    s.loc[1] = "zoo"
-    tmp.iloc[2] = "zoo"
-
-    tm.assert_series_equal(s, tmp)
-
-
 def test_slice_float_get_set(datetime_series):
     msg = (
-        r"cannot do slice indexing on <class 'pandas\.core\.indexes"
-        r"\.datetimes\.DatetimeIndex'> with these indexers \[{key}\] "
-        r"of <class 'float'>"
+        "cannot do slice indexing on DatetimeIndex with these indexers "
+        r"\[{key}\] of type float"
     )
     with pytest.raises(TypeError, match=msg.format(key=r"4\.0")):
         datetime_series[4.0:10.0]
@@ -142,40 +86,3 @@ def test_slice_float_get_set(datetime_series):
         datetime_series[4.5:10.0]
     with pytest.raises(TypeError, match=msg.format(key=r"4\.5")):
         datetime_series[4.5:10.0] = 0
-
-
-def test_slice_floats2():
-    s = Series(np.random.rand(10), index=np.arange(10, 20, dtype=float))
-
-    assert len(s.loc[12.0:]) == 8
-    assert len(s.loc[12.5:]) == 7
-
-    i = np.arange(10, 20, dtype=float)
-    i[2] = 12.2
-    s.index = i
-    assert len(s.loc[12.0:]) == 8
-    assert len(s.loc[12.5:]) == 7
-
-
-def test_int_indexing():
-    s = Series(np.random.randn(6), index=[0, 0, 1, 1, 2, 2])
-
-    with pytest.raises(KeyError, match=r"^5$"):
-        s[5]
-
-    with pytest.raises(KeyError, match=r"^'c'$"):
-        s["c"]
-
-    # not monotonic
-    s = Series(np.random.randn(6), index=[2, 2, 0, 0, 1, 1])
-
-    with pytest.raises(KeyError, match=r"^5$"):
-        s[5]
-
-    with pytest.raises(KeyError, match=r"^'c'$"):
-        s["c"]
-
-
-def test_getitem_int64(datetime_series):
-    idx = np.int64(5)
-    assert datetime_series[idx] == datetime_series[5]

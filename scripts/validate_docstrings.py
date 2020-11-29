@@ -35,19 +35,19 @@ except ImportError:
 # script. Setting here before matplotlib is loaded.
 # We don't warn for the number of open plots, as none is actually being opened
 os.environ["MPLBACKEND"] = "Template"
-import matplotlib  # noqa: E402 isort:skip
+import matplotlib  # isort:skip
 
 matplotlib.rc("figure", max_open_warning=10000)
 
-import numpy  # noqa: E402 isort:skip
+import numpy  # isort:skip
 
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 sys.path.insert(0, os.path.join(BASE_PATH))
-import pandas  # noqa: E402 isort:skip
+import pandas  # isort:skip
 
 sys.path.insert(1, os.path.join(BASE_PATH, "doc", "sphinxext"))
-from numpydoc.validate import validate, Docstring  # noqa: E402 isort:skip
+from numpydoc.validate import validate, Docstring  # isort:skip
 
 
 PRIVATE_CLASSES = ["NDFrame", "IndexOpsMixin"]
@@ -243,14 +243,12 @@ def pandas_validate(func_name: str):
                     "EX03",
                     error_code=err.error_code,
                     error_message=err.message,
-                    times_happening=" ({} times)".format(err.count)
-                    if err.count > 1
-                    else "",
+                    times_happening=f" ({err.count} times)" if err.count > 1 else "",
                 )
             )
         examples_source_code = "".join(doc.examples_source_code)
         for wrong_import in ("numpy", "pandas"):
-            if "import {}".format(wrong_import) in examples_source_code:
+            if f"import {wrong_import}" in examples_source_code:
                 result["errors"].append(
                     pandas_error("EX04", imported_library=wrong_import)
                 )
@@ -345,9 +343,7 @@ def print_validate_one_results(func_name: str):
         full_line = char * width
         side_len = (width - len(title) - 2) // 2
         adj = "" if len(title) % 2 == 0 else " "
-        title_line = "{side} {title}{adj} {side}".format(
-            side=char * side_len, title=title, adj=adj
-        )
+        title_line = f"{char * side_len} {title}{adj} {char * side_len}"
 
         return f"\n{full_line}\n{title_line}\n{full_line}\n\n"
 
@@ -364,7 +360,7 @@ def print_validate_one_results(func_name: str):
                 sys.stderr.write("\tExamples do not pass tests\n")
                 continue
             sys.stderr.write(f"\t{err_desc}\n")
-    elif result["errors"]:
+    else:
         sys.stderr.write(f'Docstring for "{func_name}" correct. :)\n')
 
     if result["examples_errs"]:

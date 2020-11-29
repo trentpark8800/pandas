@@ -1,6 +1,6 @@
 """Tests formatting as writer-agnostic ExcelCells
 
-ExcelFormatter is tested implicitly in pandas/tests/io/test_excel.py
+ExcelFormatter is tested implicitly in pandas/tests/io/excel
 """
 
 import pytest
@@ -278,7 +278,7 @@ def test_css_to_excel_good_colors(input_color, output_color):
         f"color: {input_color}"
     )
 
-    expected = dict()
+    expected = {}
 
     expected["fill"] = {"patternType": "solid", "fgColor": output_color}
 
@@ -305,7 +305,7 @@ def test_css_to_excel_bad_colors(input_color):
         f"color: {input_color}"
     )
 
-    expected = dict()
+    expected = {}
 
     if input_color is not None:
         expected["fill"] = {"patternType": "solid"}

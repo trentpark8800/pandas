@@ -1,43 +1,66 @@
 import cython
 from cython import Py_ssize_t
 
-from libc.stdlib cimport malloc, free
-from libc.string cimport memmove
 from libc.math cimport fabs, sqrt
+from libc.stdlib cimport free, malloc
+from libc.string cimport memmove
 
 import numpy as np
+
 cimport numpy as cnp
-from numpy cimport (ndarray,
-                    NPY_INT64, NPY_INT32, NPY_INT16, NPY_INT8,
-                    NPY_UINT64, NPY_UINT32, NPY_UINT16, NPY_UINT8,
-                    NPY_FLOAT32, NPY_FLOAT64,
-                    NPY_OBJECT,
-                    int8_t, int16_t, int32_t, int64_t, uint8_t, uint16_t,
-                    uint32_t, uint64_t, float32_t, float64_t)
+from numpy cimport (
+    NPY_FLOAT32,
+    NPY_FLOAT64,
+    NPY_INT8,
+    NPY_INT16,
+    NPY_INT32,
+    NPY_INT64,
+    NPY_OBJECT,
+    NPY_UINT8,
+    NPY_UINT16,
+    NPY_UINT32,
+    NPY_UINT64,
+    float32_t,
+    float64_t,
+    int8_t,
+    int16_t,
+    int32_t,
+    int64_t,
+    ndarray,
+    uint8_t,
+    uint16_t,
+    uint32_t,
+    uint64_t,
+)
+
 cnp.import_array()
 
 
 cimport pandas._libs.util as util
-from pandas._libs.util cimport numeric, get_nat
-
 from pandas._libs.khash cimport (
-    khiter_t, kh_destroy_int64, kh_put_int64, kh_init_int64, kh_int64_t,
-    kh_resize_int64, kh_get_int64)
+    kh_destroy_int64,
+    kh_get_int64,
+    kh_init_int64,
+    kh_int64_t,
+    kh_put_int64,
+    kh_resize_int64,
+    khiter_t,
+)
+from pandas._libs.util cimport get_nat, numeric
 
 import pandas._libs.missing as missing
 
-cdef float64_t FP_ERR = 1e-13
-
-cdef float64_t NaN = <float64_t>np.NaN
-
-cdef int64_t NPY_NAT = get_nat()
+cdef:
+    float64_t FP_ERR = 1e-13
+    float64_t NaN = <float64_t>np.NaN
+    int64_t NPY_NAT = get_nat()
 
 tiebreakers = {
-    'average': TIEBREAK_AVERAGE,
-    'min': TIEBREAK_MIN,
-    'max': TIEBREAK_MAX,
-    'first': TIEBREAK_FIRST,
-    'dense': TIEBREAK_DENSE,
+    "average": TIEBREAK_AVERAGE,
+    "min": TIEBREAK_MIN,
+    "max": TIEBREAK_MAX,
+    "first": TIEBREAK_FIRST,
+    "dense": TIEBREAK_DENSE,
 }
 
 
@@ -96,6 +119,7 @@ cpdef ndarray[int64_t, ndim=1] unique_deltas(const int64_t[:] arr):
         kh_int64_t *table
         int ret = 0
         list uniques = []
+        ndarray[int64_t, ndim=1] result
 
     table = kh_init_int64()
     kh_resize_int64(table, 10)
@@ -237,14 +261,15 @@ def kth_smallest(numeric[:] a, Py_ssize_t k) -> numeric:
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def nancorr(const float64_t[:, :] mat, bint cov=0, minp=None):
+def nancorr(const float64_t[:, :] mat, bint cov=False, minp=None):
     cdef:
         Py_ssize_t i, j, xi, yi, N, K
         bint minpv
         ndarray[float64_t, ndim=2] result
         ndarray[uint8_t, ndim=2] mask
         int64_t nobs = 0
-        float64_t vx, vy, sumx, sumy, sumxx, sumyy, meanx, meany, divisor
+        float64_t vx, vy, meanx, meany, divisor, prev_meany, prev_meanx, ssqdmx
+        float64_t ssqdmy, covxy
 
     N, K = (<object>mat).shape
 
@@ -259,37 +284,29 @@ def nancorr(const float64_t[:, :] mat, bint cov=0, minp=None):
     with nogil:
         for xi in range(K):
             for yi in range(xi + 1):
-                nobs = sumxx = sumyy = sumx = sumy = 0
+                # Welford's method for the variance-calculation
+                # https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
+                nobs = ssqdmx = ssqdmy = covxy = meanx = meany = 0
                 for i in range(N):
                     if mask[i, xi] and mask[i, yi]:
                         vx = mat[i, xi]
                         vy = mat[i, yi]
                         nobs += 1
-                        sumx += vx
-                        sumy += vy
+                        prev_meanx = meanx
+                        prev_meany = meany
+                        meanx = meanx + 1 / nobs * (vx - meanx)
+                        meany = meany + 1 / nobs * (vy - meany)
+                        ssqdmx = ssqdmx + (vx - meanx) * (vx - prev_meanx)
+                        ssqdmy = ssqdmy + (vy - meany) * (vy - prev_meany)
+                        covxy = covxy + (vx - meanx) * (vy - prev_meany)
 
                 if nobs < minpv:
                     result[xi, yi] = result[yi, xi] = NaN
                 else:
-                    meanx = sumx / nobs
-                    meany = sumy / nobs
-
-                    # now the cov numerator
-                    sumx = 0
-
-                    for i in range(N):
-                        if mask[i, xi] and mask[i, yi]:
-                            vx = mat[i, xi] - meanx
-                            vy = mat[i, yi] - meany
-
-                            sumx += vx * vy
-                            sumxx += vx * vx
-                            sumyy += vy * vy
-
-                    divisor = (nobs - 1.0) if cov else sqrt(sumxx * sumyy)
+                    divisor = (nobs - 1.0) if cov else sqrt(ssqdmx * ssqdmy)
 
                     if divisor != 0:
-                        result[xi, yi] = result[yi, xi] = sumx / divisor
+                        result[xi, yi] = result[yi, xi] = covxy / divisor
                     else:
                         result[xi, yi] = result[yi, xi] = NaN
 
@@ -301,7 +318,7 @@ def nancorr(const float64_t[:, :] mat, bint cov=0, minp=None):
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def nancorr_spearman(const float64_t[:, :] mat, Py_ssize_t minp=1):
+def nancorr_spearman(ndarray[float64_t, ndim=2] mat, Py_ssize_t minp=1) -> ndarray:
     cdef:
         Py_ssize_t i, j, xi, yi, N, K
         ndarray[float64_t, ndim=2] result
@@ -388,7 +405,7 @@ ctypedef fused algos_t:
     uint8_t
 
 
-def _validate_limit(nobs: int, limit=None) -> int:
+def validate_limit(nobs: int, limit=None) -> int:
     """
     Check that the `limit` argument is a positive integer.
 
@@ -428,7 +445,7 @@ def pad(ndarray[algos_t] old, ndarray[algos_t] new, limit=None):
     indexer = np.empty(nright, dtype=np.int64)
     indexer[:] = -1
 
-    lim = _validate_limit(nright, limit)
+    lim = validate_limit(nright, limit)
 
     if nleft == 0 or nright == 0 or new[nright - 1] < old[0]:
         return indexer
@@ -485,7 +502,7 @@ def pad_inplace(algos_t[:] values, const uint8_t[:] mask, limit=None):
     if N == 0:
         return
 
-    lim = _validate_limit(N, limit)
+    lim = validate_limit(N, limit)
 
     val = values[0]
     for i in range(N):
@@ -513,7 +530,7 @@ def pad_2d_inplace(algos_t[:, :] values, const uint8_t[:, :] mask, limit=None):
     if N == 0:
         return
 
-    lim = _validate_limit(N, limit)
+    lim = validate_limit(N, limit)
 
     for j in range(K):
         fill_count = 0
@@ -557,7 +574,7 @@ D
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def backfill(ndarray[algos_t] old, ndarray[algos_t] new, limit=None):
+def backfill(ndarray[algos_t] old, ndarray[algos_t] new, limit=None) -> ndarray:
     cdef:
         Py_ssize_t i, j, nleft, nright
         ndarray[int64_t, ndim=1] indexer
@@ -569,7 +586,7 @@ def backfill(ndarray[algos_t] old, ndarray[algos_t] new, limit=None):
     indexer = np.empty(nright, dtype=np.int64)
     indexer[:] = -1
 
-    lim = _validate_limit(nright, limit)
+    lim = validate_limit(nright, limit)
 
     if nleft == 0 or nright == 0 or new[0] > old[nleft - 1]:
         return indexer
@@ -627,7 +644,7 @@ def backfill_inplace(algos_t[:] values, const uint8_t[:] mask, limit=None):
     if N == 0:
         return
 
-    lim = _validate_limit(N, limit)
+    lim = validate_limit(N, limit)
 
     val = values[N - 1]
     for i in range(N - 1, -1, -1):
@@ -657,7 +674,7 @@ def backfill_2d_inplace(algos_t[:, :] values,
     if N == 0:
         return
 
-    lim = _validate_limit(N, limit)
+    lim = validate_limit(N, limit)
 
     for j in range(K):
         fill_count = 0
@@ -774,25 +791,26 @@ ctypedef fused rank_t:
 
 @cython.wraparound(False)
 @cython.boundscheck(False)
-def rank_1d(rank_t[:] in_arr, ties_method='average',
-            ascending=True, na_option='keep', pct=False):
+def rank_1d(
+    ndarray[rank_t, ndim=1] in_arr,
+    ties_method="average",
+    bint ascending=True,
+    na_option="keep",
+    bint pct=False,
+):
     """
     Fast NaN-friendly version of ``scipy.stats.rankdata``.
     """
     cdef:
         Py_ssize_t i, j, n, dups = 0, total_tie_count = 0, non_na_idx = 0
-
         ndarray[rank_t] sorted_data, values
-
         ndarray[float64_t] ranks
         ndarray[int64_t] argsorted
         ndarray[uint8_t, cast=True] sorted_mask
-
         rank_t val, nan_value
-
         float64_t sum_ranks = 0
         int tiebreak = 0
-        bint keep_na = 0
+        bint keep_na = False
         bint isnan, condition
         float64_t count = 0.0
 
@@ -992,26 +1010,27 @@ def rank_1d(rank_t[:] in_arr, ties_method='average',
         return ranks
 
 
-def rank_2d(rank_t[:, :] in_arr, axis=0, ties_method='average',
-            ascending=True, na_option='keep', pct=False):
+def rank_2d(
+    ndarray[rank_t, ndim=2] in_arr,
+    int axis=0,
+    ties_method="average",
+    bint ascending=True,
+    na_option="keep",
+    bint pct=False,
+):
     """
     Fast NaN-friendly version of ``scipy.stats.rankdata``.
     """
     cdef:
         Py_ssize_t i, j, z, k, n, dups = 0, total_tie_count = 0
-
         Py_ssize_t infs
-
         ndarray[float64_t, ndim=2] ranks
         ndarray[rank_t, ndim=2] values
-
         ndarray[int64_t, ndim=2] argsorted
-
         rank_t val, nan_value
-
         float64_t sum_ranks = 0
         int tiebreak = 0
-        bint keep_na = 0
+        bint keep_na = False
         float64_t count = 0.0
         bint condition, skip_condition
 
@@ -1169,16 +1188,23 @@ ctypedef fused diff_t:
 ctypedef fused out_t:
     float32_t
     float64_t
+    int64_t
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def diff_2d(ndarray[diff_t, ndim=2] arr,
-            ndarray[out_t, ndim=2] out,
-            Py_ssize_t periods, int axis):
+def diff_2d(
+    ndarray[diff_t, ndim=2] arr,  # TODO(cython 3) update to "const diff_t[:, :] arr"
+    ndarray[out_t, ndim=2] out,
+    Py_ssize_t periods,
+    int axis,
+    bint datetimelike=False,
+):
     cdef:
         Py_ssize_t i, j, sx, sy, start, stop
         bint f_contig = arr.flags.f_contiguous
+        # bint f_contig = arr.is_f_contig()  # TODO(cython 3)
+        diff_t left, right
 
     # Disable for unsupported dtype combinations,
     #  see https://github.com/cython/cython/issues/2646
@@ -1187,6 +1213,9 @@ def diff_2d(ndarray[diff_t, ndim=2] arr,
         raise NotImplementedError
     elif (out_t is float64_t
           and (diff_t is float32_t or diff_t is int8_t or diff_t is int16_t)):
+        raise NotImplementedError
+    elif out_t is int64_t and diff_t is not int64_t:
+        # We only have out_t of int64_t if we have datetimelike
         raise NotImplementedError
     else:
         # We put this inside an indented else block to avoid cython build
@@ -1201,7 +1230,15 @@ def diff_2d(ndarray[diff_t, ndim=2] arr,
                         start, stop = 0, sx + periods
                     for j in range(sy):
                         for i in range(start, stop):
-                            out[i, j] = arr[i, j] - arr[i - periods, j]
+                            left = arr[i, j]
+                            right = arr[i - periods, j]
+                            if out_t is int64_t and datetimelike:
+                                if left == NPY_NAT or right == NPY_NAT:
+                                    out[i, j] = NPY_NAT
+                                else:
+                                    out[i, j] = left - right
+                            else:
+                                out[i, j] = left - right
                 else:
                     if periods >= 0:
                         start, stop = periods, sy
@@ -1209,7 +1246,15 @@ def diff_2d(ndarray[diff_t, ndim=2] arr,
                         start, stop = 0, sy + periods
                     for j in range(start, stop):
                         for i in range(sx):
-                            out[i, j] = arr[i, j] - arr[i, j - periods]
+                            left = arr[i, j]
+                            right = arr[i, j - periods]
+                            if out_t is int64_t and datetimelike:
+                                if left == NPY_NAT or right == NPY_NAT:
+                                    out[i, j] = NPY_NAT
+                                else:
+                                    out[i, j] = left - right
+                            else:
+                                out[i, j] = left - right
             else:
                 if axis == 0:
                     if periods >= 0:
@@ -1218,7 +1263,15 @@ def diff_2d(ndarray[diff_t, ndim=2] arr,
                         start, stop = 0, sx + periods
                     for i in range(start, stop):
                         for j in range(sy):
-                            out[i, j] = arr[i, j] - arr[i - periods, j]
+                            left = arr[i, j]
+                            right = arr[i - periods, j]
+                            if out_t is int64_t and datetimelike:
+                                if left == NPY_NAT or right == NPY_NAT:
+                                    out[i, j] = NPY_NAT
+                                else:
+                                    out[i, j] = left - right
+                            else:
+                                out[i, j] = left - right
                 else:
                     if periods >= 0:
                         start, stop = periods, sy
@@ -1226,7 +1279,15 @@ def diff_2d(ndarray[diff_t, ndim=2] arr,
                         start, stop = 0, sy + periods
                     for i in range(sx):
                         for j in range(start, stop):
-                            out[i, j] = arr[i, j] - arr[i, j - periods]
+                            left = arr[i, j]
+                            right = arr[i, j - periods]
+                            if out_t is int64_t and datetimelike:
+                                if left == NPY_NAT or right == NPY_NAT:
+                                    out[i, j] = NPY_NAT
+                                else:
+                                    out[i, j] = left - right
+                            else:
+                                out[i, j] = left - right
 
 
 # generated from template

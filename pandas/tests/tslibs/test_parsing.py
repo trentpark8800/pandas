@@ -2,6 +2,7 @@
 Tests for Timestamp parsing, aimed at pandas/_libs/tslibs/parsing.pyx
 """
 from datetime import datetime
+import re
 
 from dateutil.parser import parse
 import numpy as np
@@ -24,7 +25,8 @@ def test_parse_time_string():
 
 def test_parse_time_string_invalid_type():
     # Raise on invalid input, don't just return it
-    with pytest.raises(TypeError):
+    msg = "Argument 'arg' has incorrect type (expected str, got tuple)"
+    with pytest.raises(TypeError, match=re.escape(msg)):
         parse_time_string((4, 5))
 
 
@@ -42,9 +44,9 @@ def test_parse_time_quarter_with_dash(dashed, normal):
 
 @pytest.mark.parametrize("dashed", ["-2Q1992", "2-Q1992", "4-4Q1992"])
 def test_parse_time_quarter_with_dash_error(dashed):
-    msg = "Unknown datetime string format, unable to parse: {dashed}"
+    msg = f"Unknown datetime string format, unable to parse: {dashed}"
 
-    with pytest.raises(parsing.DateParseError, match=msg.format(dashed=dashed)):
+    with pytest.raises(parsing.DateParseError, match=msg):
         parse_time_string(dashed)
 
 
@@ -73,7 +75,7 @@ def test_does_not_convert_mixed_integer(date_string, expected):
     [
         (
             "2013Q5",
-            dict(),
+            {},
             (
                 "Incorrect quarterly string is given, "
                 "quarter must be between 1 and 4: 2013Q5"
@@ -82,7 +84,7 @@ def test_does_not_convert_mixed_integer(date_string, expected):
         # see gh-5418
         (
             "2013Q1",
-            dict(freq="INVLD-L-DEC-SAT"),
+            {"freq": "INVLD-L-DEC-SAT"},
             (
                 "Unable to retrieve month information "
                 "from given freq: INVLD-L-DEC-SAT"
@@ -115,12 +117,12 @@ def test_parsers_quarter_invalid(date_str):
     if date_str == "6Q-20":
         msg = (
             "Incorrect quarterly string is given, quarter "
-            "must be between 1 and 4: {date_str}"
+            f"must be between 1 and 4: {date_str}"
         )
     else:
-        msg = "Unknown datetime string format, unable to parse: {date_str}"
+        msg = f"Unknown datetime string format, unable to parse: {date_str}"
 
-    with pytest.raises(ValueError, match=msg.format(date_str=date_str)):
+    with pytest.raises(ValueError, match=msg):
         parsing.parse_time_string(date_str)
 
 
@@ -146,14 +148,14 @@ def test_parsers_month_freq(date_str, expected):
     ],
 )
 def test_guess_datetime_format_with_parseable_formats(string, fmt):
-    result = parsing._guess_datetime_format(string)
+    result = parsing.guess_datetime_format(string)
     assert result == fmt
 
 
 @pytest.mark.parametrize("dayfirst,expected", [(True, "%d/%m/%Y"), (False, "%m/%d/%Y")])
 def test_guess_datetime_format_with_dayfirst(dayfirst, expected):
     ambiguous_string = "01/01/2011"
-    result = parsing._guess_datetime_format(ambiguous_string, dayfirst=dayfirst)
+    result = parsing.guess_datetime_format(ambiguous_string, dayfirst=dayfirst)
     assert result == expected
 
 
@@ -167,7 +169,7 @@ def test_guess_datetime_format_with_dayfirst(dayfirst, expected):
     ],
 )
 def test_guess_datetime_format_with_locale_specific_formats(string, fmt):
-    result = parsing._guess_datetime_format(string)
+    result = parsing.guess_datetime_format(string)
     assert result == fmt
 
 
@@ -187,7 +189,7 @@ def test_guess_datetime_format_with_locale_specific_formats(string, fmt):
 def test_guess_datetime_format_invalid_inputs(invalid_dt):
     # A datetime string must include a year, month and a day for it to be
     # guessable, in addition to being a string that looks like a datetime.
-    assert parsing._guess_datetime_format(invalid_dt) is None
+    assert parsing.guess_datetime_format(invalid_dt) is None
 
 
 @pytest.mark.parametrize(
@@ -203,7 +205,7 @@ def test_guess_datetime_format_invalid_inputs(invalid_dt):
 )
 def test_guess_datetime_format_no_padding(string, fmt):
     # see gh-11142
-    result = parsing._guess_datetime_format(string)
+    result = parsing.guess_datetime_format(string)
     assert result == fmt
 
 
@@ -217,7 +219,8 @@ def test_try_parse_dates():
 
 def test_parse_time_string_check_instance_type_raise_exception():
     # issue 20684
-    with pytest.raises(TypeError):
+    msg = "Argument 'arg' has incorrect type (expected str, got tuple)"
+    with pytest.raises(TypeError, match=re.escape(msg)):
         parse_time_string((1, 2, 3))
 
     result = parse_time_string("2019")
